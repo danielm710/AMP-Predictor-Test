@@ -17,7 +17,6 @@ from scripts import predict
 # Change working directory to luigi
 # Assumes luigi directory is inside the web-app dir
 os.chdir('AMP-Predictor-Test')
-luigi.configuration.add_config_path('data/config.cfg')
 
 def run_cmd(cmd):
     p = Popen(cmd, stdout=PIPE)
