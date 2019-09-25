@@ -570,7 +570,7 @@ class Predict_sliding_window(luigi.Task):
                         break
 
                     else:
-                        non_amp = sequence[prevEnd:Start]
+                        non_amp = sequence[prevEnd:start]
 
                     prevStart = start
                     prevEnd = end
