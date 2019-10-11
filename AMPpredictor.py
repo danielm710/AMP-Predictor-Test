@@ -166,13 +166,13 @@ class HMMscan(luigi.Task):
             fasta
             ])
 
-class Extract_HMMscan_IDs(luigi.Task):
+class Extract_HMMscan_Metadata(luigi.Task):
 
     def requires(self):
         return HMMscan()
 
     def output(self):
-        hmm_accessions = os.path.join(output_dirs().hmm_dir, "hmm_accessions.txt")
+        hmm_accessions = os.path.join(output_dirs().hmm_dir, "hmm_metadata.json")
 
         return luigi.LocalTarget(hmm_accessions)
 
@@ -194,7 +194,12 @@ class Extract_HMMscan_IDs(luigi.Task):
         # e.g. tr|A0A060WL84|A0A060WL84_ONCMY
         # Think of a way to deal with inconsistent headers
 
+        # Store hmm metadata
+        hmm_dict = {}
         for line in hmm_raw:
+            hmm_metadata = []
+            tmp = {}
+            
             line = line.strip()
             info = line.split()
 
@@ -203,18 +208,34 @@ class Extract_HMMscan_IDs(luigi.Task):
             else:
                 accession = info[3].strip()
 
-            hmm_accessions.add(accession)
+            domain = info[0]
+            evalue = info[6]
+            ali_start = info[17]
+            ali_end = info[18]
+
+            tmp['domain'] = domain.split('_')[0]
+            tmp['evalue'] = evalue
+            tmp['start'] = ali_start
+            tmp['end'] = ali_end
+
+            hmm_metadata.append(tmp)
+
+            # if seq already exists, extend the list
+            if(accession in hmm_dict):
+                hmm_dict[accession].extend(hmm_metadata)
+            # if not, add a new entry
+            else:
+                hmm_dict[accession] = hmm_metadata
 
         with self.output().open('w') as fh:
-            for acc in hmm_accessions:
-                fh.write(acc + "\n")
+            json.dump(hmm_dict, fh)
 
 class Filter_fasta(luigi.Task):
     threshold = luigi.IntParameter(default=100)
 
     def requires(self):
         return {
-                "hmm": Extract_HMMscan_IDs(),
+                "hmm": Extract_HMMscan_Metadata(),
                 "fasta": Read_fasta()
                 }
 
@@ -226,10 +247,8 @@ class Filter_fasta(luigi.Task):
 
     def run(self):
         # Load input
-        hmm_accessions = set()
         with self.input()["hmm"].open('r') as fh:
-            for line in fh:
-                hmm_accessions.add(line.strip())
+            hmm_dict = json.load(fh)
 
         with self.input()["fasta"].open('r') as fh:
             fasta_dict = json.load(fh)
@@ -247,6 +266,7 @@ class Filter_fasta(luigi.Task):
         long_sequence_ids = fasta_df[fasta_df['length'] > self.threshold].index
 
         # Further filter by HMM for long sequences
+        hmm_accessions = set(hmm_dict.keys())
         long_hmm_ids = hmm_accessions.intersection(set(long_sequence_ids))
 
         # Get final list of IDs
@@ -396,7 +416,7 @@ class Calculate_relative_frequency_profile(luigi.Task):
 
     def output(self):
         fasta_relative_profile = os.path.join(output_dirs().test_preprocessed_dir,
-                "unlabeled_rel_freq_profile.csv")
+                "unlabeled_rel_freq_profile.csv")	
 
         return luigi.LocalTarget(fasta_relative_profile)
 
@@ -425,27 +445,17 @@ class Predict_sliding_window(luigi.Task):
     def requires(self):
         return {
                 "relative_freq": Calculate_relative_frequency_profile(),
-                "hmm": Extract_HMMscan_IDs(),
+                "hmm": Extract_HMMscan_Metadata(),
                 "original": Sliding_window(),
                 "Rename_fasta": Rename_fasta()
                 }
 
     def output(self):
-        #pos_prediction = os.path.join(prediction_dir,
-        #        "unlabeled_pos_prediction.txt")
-        #neg_prediction = os.path.join(prediction_dir,
-        #        "unlabeled_neg_prediction.txt")
-
         # JSON output
-        pos_prediction = os.path.join(output_dirs().prediction_dir,
-                "unlabeled_pos_prediction.json")
-        neg_prediction = os.path.join(output_dirs().prediction_dir,
-                "unlabeled_neg_prediction.json")
+        all_prediction = os.path.join(output_dirs().prediction_dir,
+            "unlabeled_prediction.json")
 
-        output = {'pos': luigi.LocalTarget(pos_prediction),
-                'neg': luigi.LocalTarget(neg_prediction)}
-
-        return output
+        return luigi.LocalTarget(all_prediction)
 
     def run(self):
         # Make prediction directory if not exist
@@ -466,10 +476,9 @@ class Predict_sliding_window(luigi.Task):
             original_df = pd.read_csv(fh).set_index(['seq_ID', 'index'])
 
         # Retrieve HMMscan accessions
-        hmm_accessions = []
         with self.input()["hmm"].open('r') as fh:
-            for line in fh:
-                hmm_accessions.append(line.strip())
+        	hmm_dict = json.load(fh)
+        hmm_accessions = set(hmm_dict.keys())
 
         # Get a list of kmers used for training
         kmers = pd.read_csv(model_meta_data().kmers_file).\
@@ -494,17 +503,17 @@ class Predict_sliding_window(luigi.Task):
                 header_dict
                 )
 
-        # Map headers back to original headers
+        # Map headers back to original headers in hmm metadata
+        for new_header in hmm_accessions:
+            original_header = header_dict[new_header]
 
-        pos_pred_json = self.multi_df_to_JSON(pos_pred_df)
-        neg_pred_json = self.multi_df_to_JSON(neg_pred_df)
+            hmm_dict[original_header] = hmm_dict.pop(new_header)
 
-        with self.output()['pos'].open('w') as fh:
-            #pos_pred_df.to_csv(fh, sep="\t")
-            json.dump(pos_pred_json, fh)
-        with self.output()['neg'].open('w') as fh:
-            #neg_pred_df.to_csv(fh, sep="\t")
-            json.dump(neg_pred_json, fh)
+        all_pred_df = pd.concat([pos_pred_df, neg_pred_df])
+        all_pred_json = self.multi_df_to_JSON(all_pred_df, hmm_dict)
+
+        with self.output().open('w') as fh:
+            json.dump(all_pred_json, fh)
 
     def get_amp_subsequences(self, amp_indice_dict, seq_dict):
         isAMP = True
@@ -585,6 +594,16 @@ class Predict_sliding_window(luigi.Task):
                     tmp_amp_d['subSequence'] = amp
                     amp_subseq_list.append(tmp_amp_d)
 
+                    # Special case: only one entry
+                    # Add the last bit
+                    if(len(amp_indices) == 1):
+                        non_amp = sequence[end:]
+                        if(non_amp):
+                            tmp_non_amp_d['isAMP'] = False
+                            tmp_non_amp_d['subSequence'] = non_amp
+                            amp_subseq_list.append(tmp_non_amp_d)
+
+
             amp_dict[_id] = amp_subseq_list
 
 
@@ -637,7 +656,39 @@ class Predict_sliding_window(luigi.Task):
 
         return amp_indice_dict
 
-    def multi_df_to_JSON(self, df):
+    def get_probability_profile(self, d):
+        prob_profile = {}
+
+        prevID = ''
+        currentID = ''
+        regions = []
+
+        for k in sorted(d):
+            prevID = currentID
+            currentID = k[0]
+            region = {}
+
+            if(currentID != prevID and prevID):
+                prob_profile[prevID] = regions
+
+                regions = []
+
+            prob = round(d[k]['Probability'], 3) * 100
+            prob_formatted = '%.1f' % prob
+            start = int(k[1]) * self.stride_len
+            end = start + d[k]['Length']
+            region['Start'] = start
+            region['End'] = end
+            region['Probability'] = prob_formatted
+
+            regions.append(region)
+
+        # Add last entry
+        prob_profile[currentID] = regions
+
+        return prob_profile
+
+    def multi_df_to_JSON(self, df, hmm_metadata):
         # Convert MultiIndex dataframe to JSON compatible format
         d = df.to_dict(orient='index')
 
@@ -649,8 +700,8 @@ class Predict_sliding_window(luigi.Task):
         # value = data
         prevID = ''
         currentID = ''
-        window_size = 60
-        step_len = 10
+        window_size = self.window_size
+        step_len = self.stride_len
 
         seq = ""
         renew = False
@@ -675,12 +726,6 @@ class Predict_sliding_window(luigi.Task):
                 if(d[k]['Probability'] >= 0.5):
                     chunked_amp_dict.setdefault(k[0], []).append(chunked_seq)
 
-                # Get HMM information
-                if(d[k]['HMM'] == 1):
-                    HMM_dict[k[0]] = 1
-                else:
-                    HMM_dict[k[0]] = 0
-
             # New entry 
             else:
                 if(renew):
@@ -696,16 +741,11 @@ class Predict_sliding_window(luigi.Task):
                 if(d[k]['Probability'] >= 0.5):
                     chunked_amp_dict.setdefault(k[0], []).append(chunked_seq)
 
-                # Get HMM information
-                if(d[k]['HMM'] == 1):
-                    HMM_dict[k[0]] = 1
-                else:
-                    HMM_dict[k[0]] = 0
-
         seq_dict[currentID] = seq
 
         amp_indice_dict = self.get_amp_region_index(seq_dict, chunked_amp_dict)
         amp_dict = self.get_amp_subsequences(amp_indice_dict, seq_dict)
+        prob_profile = self.get_probability_profile(d)
 
         # Create JSON finally...
         json_data = []
@@ -714,8 +754,9 @@ class Predict_sliding_window(luigi.Task):
                     'seqID': _id,
                     'sequence': seq_dict[_id],
                     'ampRegion': amp_dict[_id],
-                    'HMM': HMM_dict[_id],
-                    'length': len(seq_dict[_id])
+                    'HMM': hmm_metadata[_id] if(_id in hmm_metadata) else False,
+                    'length': len(seq_dict[_id]),
+                    'probabilityProfile': prob_profile[_id]
                     }
             json_data.append(data)
 
@@ -784,7 +825,7 @@ class proteome_screening(luigi.Task):
                     Rename_fasta(),
                     Read_fasta(),
                     HMMscan(),
-                    Extract_HMMscan_IDs(),
+                    Extract_HMMscan_Metadata(),
                     Filter_fasta(),
                     Sliding_window(),
                     Convert_to_reduced(),
