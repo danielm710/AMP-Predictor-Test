@@ -16,7 +16,7 @@ from scripts import predict
 
 # Change working directory to luigi
 # Assumes luigi directory is inside the web-app dir
-os.chdir('AMP-Predictor-Test')
+#os.chdir('AMP-Predictor-Test')
 
 def run_cmd(cmd):
     p = Popen(cmd, stdout=PIPE)
@@ -27,9 +27,10 @@ class uid(luigi.Config):
     uid = luigi.Parameter()
 
 class output_dirs(luigi.Config):
-    parent_dir = "outputs" # Base dir
-    uid = uid().uid # Actual output dir
-    out_dir = os.path.join(parent_dir, str(uid))
+    #parent_dir = "outputs" # Base dir
+    #uid = uid().uid # Actual output dir
+    #out_dir = os.path.join(parent_dir, str(uid))
+    out_dir = luigi.Parameter()
 
     test_preprocessed_dir = os.path.join(out_dir, "test_preprocessed")
     renamed_dir = os.path.join(out_dir, "renamed")
@@ -502,6 +503,9 @@ class Predict_sliding_window(luigi.Task):
                 hmm_accessions,
                 header_dict
                 )
+
+        #pos_pred_df.to_csv("pos_pred.csv")
+        #neg_pred_df.to_csv("neg_pred.csv")
 
         # Map headers back to original headers in hmm metadata
         for new_header in hmm_accessions:
