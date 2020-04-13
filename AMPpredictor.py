@@ -18,6 +18,9 @@ from scripts import predict
 # Assumes luigi directory is inside the web-app dir
 #os.chdir('AMP-Predictor-Test')
 
+config_path = "/pipeline/AMP-Predictor-Test/configuration/luigi.cfg"
+luigi.configuration.add_config_path(config_path)
+
 def run_cmd(cmd):
     p = Popen(cmd, stdout=PIPE)
     output = p.communicate()[0]
@@ -26,11 +29,14 @@ def run_cmd(cmd):
 class uid(luigi.Config):
     uid = luigi.Parameter()
 
+class base_outdir(luigi.Config):
+    base_dir = luigi.Parameter()
+
 class output_dirs(luigi.Config):
     #parent_dir = "outputs" # Base dir
     #uid = uid().uid # Actual output dir
     #out_dir = os.path.join(parent_dir, str(uid))
-    out_dir = luigi.Parameter()
+    out_dir = base_outdir().base_dir
 
     test_preprocessed_dir = os.path.join(out_dir, "test_preprocessed")
     renamed_dir = os.path.join(out_dir, "renamed")
