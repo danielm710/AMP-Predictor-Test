@@ -18,8 +18,8 @@ from scripts import predict
 # Assumes luigi directory is inside the web-app dir
 #os.chdir('AMP-Predictor-Test')
 
-config_path = "/pipeline/AMP-Predictor-Test/configuration/luigi.cfg"
-luigi.configuration.add_config_path(config_path)
+#config_path = "/pipeline/AMP-Predictor-Test/configuration/luigi.cfg"
+#luigi.configuration.add_config_path(config_path)
 
 def run_cmd(cmd):
     p = Popen(cmd, stdout=PIPE)
