@@ -20,11 +20,21 @@ from scripts import predict
 
 #config_path = "/pipeline/AMP-Predictor-Test/configuration/luigi.cfg"
 #luigi.configuration.add_config_path(config_path)
+logger = logging.getLogger("AMP-pipeline logger")
 
 def run_cmd(cmd):
     p = Popen(cmd, stdout=PIPE)
-    output = p.communicate()[0]
-    return output
+    stdout, stderr = proc.communicate()
+
+    return_code = proc.returncode
+
+    if not(return_code == 0):
+        combined_msg = (stdout + stderr).decode('utf-8')
+        web_err_msg = "<-->" + combined_msg + "<-->"
+
+        raise ValueError(web_err_msg)
+    else:
+        return stdout
 
 class uid(luigi.Config):
     uid = luigi.Parameter()
