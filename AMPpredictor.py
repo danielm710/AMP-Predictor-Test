@@ -1,4 +1,5 @@
 import luigi
+import logging
 import os
 from subprocess import Popen, PIPE
 import pandas as pd
