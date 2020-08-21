@@ -1,7 +1,7 @@
 import luigi
 import logging
 import os
-from subprocess import Popen, PIPE
+import subprocess
 import pandas as pd
 import joblib
 import json
@@ -24,7 +24,10 @@ from scripts import predict
 logger = logging.getLogger("AMP-pipeline logger")
 
 def run_cmd(cmd):
-    p = Popen(cmd, stdout=PIPE)
+    proc = subprocess.Popen(cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
     stdout, stderr = proc.communicate()
 
     return_code = proc.returncode
