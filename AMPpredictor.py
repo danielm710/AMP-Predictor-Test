@@ -295,6 +295,10 @@ class Filter_fasta(luigi.Task):
 
         filtered_df = fasta_df.loc[filtered_ids]
 
+        if (filtered_df.empty):
+        	message = "<---Input sequences have no known AMP domains and are longer than {} amino acids.<---".format(self.threshold)
+        	raise ValueError(message)
+
         with self.output().open('w') as fh:
             filtered_df.to_csv(fh)
 
